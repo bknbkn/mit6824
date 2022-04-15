@@ -24,6 +24,30 @@ type ExampleReply struct {
 
 // Add your RPC definitions here.
 
+type MapReplay struct {
+	Filename string
+	MapId    int
+	NReduce  int
+	WorkId   int
+}
+
+type ReduceReplay struct {
+	ReduceId int
+	NMap     int
+	WorkId   int
+}
+
+type MapMessage struct {
+	Result bool
+	MapId  int
+	WorkId int
+}
+
+type ReduceMessage struct {
+	Result   bool
+	ReduceId int
+	WorkId   int
+}
 
 // Cook up a unique-ish UNIX-domain socket name
 // in /var/tmp, for the coordinator.
