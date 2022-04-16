@@ -26,18 +26,22 @@ type Coordinator struct {
 	NRCompleted  int
 	RTimeCost    []time.Time
 
-	WorkId int
+	WorkId       int
+	TimeOutLimit int
 }
 
 // Your code here -- RPC handlers for the worker to call.
-
 func (c *Coordinator) GetMapInfo(args *int, reply *MapReplay) error {
 	c.MPoolMutex.Lock()
 	defer c.MPoolMutex.Unlock()
 	for k, v := range c.MapIdPool {
+		//if k != c.NMCompleted {
+		//	continue
+		//}
+		//log.Printf("k: %v, time now : %v, time map k: %v ", k, time.Now().Second()-c.MTimeCost[k].Second(), c.MTimeCost[k])
 		if v == -1 {
 			continue
-		} else if v == 0 || (time.Now().Second()-c.MTimeCost[k].Second() >= 10) {
+		} else if v == 0 || (time.Now().Sub(c.MTimeCost[k]) >= time.Second*time.Duration(c.TimeOutLimit)) {
 			c.WorkId++
 			c.MapIdPool[k] = c.WorkId
 			c.MTimeCost[k] = time.Now()
@@ -45,7 +49,8 @@ func (c *Coordinator) GetMapInfo(args *int, reply *MapReplay) error {
 			reply.Filename = c.FileNamePool[k]
 			reply.NReduce = c.NReduce
 			reply.WorkId = c.WorkId
-			log.Printf("get mapid :%v, workid: %v", k, c.WorkId)
+			reply.TimeOutLimit = c.TimeOutLimit
+			//log.Printf("get mapid :%v, workid: %v, filename: %v", k, c.WorkId, reply.Filename)
 			return nil
 		}
 	}
@@ -66,16 +71,17 @@ func (c *Coordinator) GetReduceInfo(args *int, reply *ReduceReplay) error {
 	c.RPollMutex.Lock()
 	defer c.RPollMutex.Unlock()
 	for k, v := range c.ReduceIdPool {
+		//log.Printf("k: %v, time now : %v, time reduce k: %v ", k, time.Now(), c.RTimeCost[k])
 		if v == -1 {
 			continue
-		} else if v == 0 || (time.Now().Second()-c.RTimeCost[k].Second() >= 10) {
+		} else if v == 0 || (time.Now().Sub(c.RTimeCost[k]) >= time.Second*time.Duration(c.TimeOutLimit)) {
 			c.WorkId++
 			c.ReduceIdPool[k] = c.WorkId
 			c.RTimeCost[k] = time.Now()
 			reply.ReduceId = k
 			reply.NMap = c.NMap
 			reply.WorkId = c.WorkId
-			log.Printf("get reduceid :%v, workid: %v", k, c.WorkId)
+			reply.TimeOutLimit = c.TimeOutLimit
 			return nil
 		}
 	}
@@ -156,8 +162,11 @@ func (c *Coordinator) server() {
 func (c *Coordinator) Done() bool {
 	ret := false
 	// Your code here.
+	c.RPollMutex.Lock()
+	defer c.RPollMutex.Unlock()
 	if c.NRCompleted == c.NReduce {
 		ret = true
+		time.Sleep(5 * time.Second)
 	}
 	return ret
 }
@@ -171,6 +180,7 @@ func MakeCoordinator(files []string, nReduce int) *Coordinator {
 	c := Coordinator{}
 
 	// Your code here.
+	//log.Printf("files : %v", files)
 	c.NReduce = nReduce
 	c.FileNamePool = files
 	c.NMap = len(files)
@@ -180,6 +190,7 @@ func MakeCoordinator(files []string, nReduce int) *Coordinator {
 	c.MTimeCost = make([]time.Time, c.NMap)
 	c.RTimeCost = make([]time.Time, c.NReduce)
 	c.MDMutex = sync.NewCond(&sync.Mutex{})
+	c.TimeOutLimit = 21
 	c.server()
 	return &c
 }

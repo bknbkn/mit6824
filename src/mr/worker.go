@@ -49,50 +49,56 @@ func Worker(mapf func(string, string) []KeyValue,
 	reducef func(string, []string) string) {
 
 	// Your worker implementation here.
-	tryTime := 10
+	tryTime := 5
+	timeDuringCall := 1
+	//log.Printf("trh %v", runtime.GOMAXPROCS(0))
 	for {
 		mapReplay, err := GetMapInfo()
 		if err != nil {
-			time.Sleep(500 * time.Millisecond)
+			time.Sleep(time.Duration(timeDuringCall) * time.Second)
 			tryTime--
 			if tryTime == 0 {
+				log.Println("coordinator GG")
 				return
 			}
 			continue
 		}
-		timeCount := time.
+		//timeCount := time.Now()
 		if mapReplay.MapId == -2 {
 			break
 		} else if mapReplay.MapId == -1 {
 			time.Sleep(2 * time.Second)
+			//log.Printf("waiting for other map work")
 			continue
 		}
-		go func() {
-			ok := MapProcess(mapf, &mapReplay, &timeCount)
+		func() {
+			ok := MapProcess(mapf, &mapReplay)
 			log.Printf("woker's mapid %v workid %v result %v", mapReplay.MapId, mapReplay.WorkId, ok)
 			UpdateMapResult(&MapMessage{Result: ok, MapId: mapReplay.MapId, WorkId: mapReplay.WorkId})
 		}()
+		//time.Sleep(5 * time.Second)
 	}
 	tryTime = 10
 	for {
 		reduceReply, err := GetReduceInfo()
 		if err != nil {
-			time.Sleep(500 * time.Millisecond)
+			time.Sleep(time.Duration(timeDuringCall) * time.Second)
 			tryTime--
 			if tryTime == 0 {
+				log.Println("coordinator GG")
 				return
 			}
 			continue
 		}
-		timeCount := time.Time{}
 		if reduceReply.ReduceId == -2 {
 			break
 		} else if reduceReply.ReduceId == -1 {
 			time.Sleep(2 * time.Second)
+			//log.Printf("waiting for other reduce work")
 			continue
 		}
-		go func() {
-			ok := ReduceProcess(reducef, &reduceReply, &timeCount)
+		func() {
+			ok := ReduceProcess(reducef, &reduceReply)
 			log.Printf("woker's reduceid %v workid %v result %v", reduceReply.ReduceId, reduceReply.WorkId, ok)
 			UpdateReduceResult(&ReduceMessage{Result: ok, ReduceId: reduceReply.ReduceId, WorkId: reduceReply.WorkId})
 		}()
@@ -103,7 +109,9 @@ func Worker(mapf func(string, string) []KeyValue,
 
 }
 
-func MapProcess(mapf func(string, string) []KeyValue, mapReplay *MapReplay, timeCount *time.Time) bool {
+func MapProcess(mapf func(string, string) []KeyValue, mapReplay *MapReplay) bool {
+	timeCount := time.Now()
+	log.Printf("get mapid :%v, workid: %v, filename: %v", mapReplay.MapId, mapReplay.WorkId, mapReplay.Filename)
 	var intermediate []KeyValue
 	filename := mapReplay.Filename
 	file, err := os.Open(filename)
@@ -132,25 +140,35 @@ func MapProcess(mapf func(string, string) []KeyValue, mapReplay *MapReplay, time
 		}
 		reduceId := ihash(intermediate[i].Key) % mapReplay.NReduce
 		openname := oname + strconv.Itoa(reduceId) + ".txt"
-		mode := os.O_CREATE
+		var (
+			ofile *os.File
+			err   error
+		)
+		//ofile, err = os.OpenFile(openname, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0666)
+
 		if _, ok := fileNameMap[reduceId]; ok {
-			mode |= os.O_APPEND
-			fileNameMap[reduceId] = 1
+			//log.Printf("old file %v %v %v", reduceId, i, intermediate[i].Key)
+			ofile, err = os.OpenFile(openname, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0666)
 		} else {
-			mode |= os.O_WRONLY
+			//log.Printf("new file %v %v %v", reduceId, i, intermediate[i].Key)
+			ofile, err = os.Create(openname)
+			fileNameMap[reduceId] = 1
 		}
-		ofile, err := os.OpenFile(openname, mode, 0666)
 		if err != nil {
-			log.Println(err)
+			log.Println("open file err", err)
 			ofile.Close()
 			return false
 		}
 		write := bufio.NewWriter(ofile)
-		for k := i; k <= j; k++ {
-			write.WriteString(fmt.Sprintf("%v %v\n", intermediate[i].Key, 1))
+		for k := i; k < j; k++ {
+			outString := fmt.Sprintf("%v,%v\n", intermediate[i].Key, intermediate[i].Value)
+			//log.Printf("out_string: %v", outString)
+			//ofile.WriteString(outString)
+			write.WriteString(outString)
 		}
-		if time.Now().Second()-timeCount.Second() >= 9 {
+		if time.Now().Sub(timeCount) >= time.Second*time.Duration(mapReplay.TimeOutLimit-1) {
 			ofile.Close()
+			log.Printf("map process timeout")
 			return false
 		}
 		write.Flush()
@@ -160,8 +178,10 @@ func MapProcess(mapf func(string, string) []KeyValue, mapReplay *MapReplay, time
 	return true
 }
 
-func ReduceProcess(reducef func(string, []string) string, reduceReplay *ReduceReplay, timeCount *time.Time) bool {
+func ReduceProcess(reducef func(string, []string) string, reduceReplay *ReduceReplay) bool {
+	timeCount := time.Now()
 	reduceId := reduceReplay.ReduceId
+	log.Printf("get reduceid :%v, workid: %v", reduceId, reduceReplay.WorkId)
 	var contents string
 	for i := 0; i < reduceReplay.NMap; i++ {
 		filename := "mr-out-" + strconv.Itoa(i) + "-" + strconv.Itoa(reduceId) + ".txt"
@@ -185,12 +205,14 @@ func ReduceProcess(reducef func(string, []string) string, reduceReplay *ReduceRe
 	oname := "mr-out-" + strconv.Itoa(reduceId) + ".txt"
 	ofile, _ := os.Create(oname)
 	defer ofile.Close()
-	ff := func(r rune) bool { return !unicode.IsLetter(r) }
+	ff := func(r rune) bool { return unicode.IsSpace(r) }
 	// split contents into an array of words.
 	words := strings.FieldsFunc(contents, ff)
 	var intermediate []KeyValue
+	fkv := func(r rune) bool { return r == ',' }
 	for _, w := range words {
-		kv := KeyValue{w, "1"}
+		tkv := strings.FieldsFunc(w, fkv)
+		kv := KeyValue{tkv[0], tkv[1]}
 		intermediate = append(intermediate, kv)
 	}
 	sort.Sort(ByKey(intermediate))
@@ -204,7 +226,8 @@ func ReduceProcess(reducef func(string, []string) string, reduceReplay *ReduceRe
 			values = append(values, intermediate[k].Value)
 		}
 		output := reducef(intermediate[i].Key, values)
-		if time.Now().Second()-timeCount.Second() >= 9 {
+		if time.Now().Sub(timeCount) >= time.Second*time.Duration(reduceReplay.TimeOutLimit-1) {
+			log.Printf("reduce process timeout")
 			return false
 		}
 		fmt.Fprintf(ofile, "%v %v\n", intermediate[i].Key, output)
@@ -216,7 +239,8 @@ func ReduceProcess(reducef func(string, []string) string, reduceReplay *ReduceRe
 		if _, err := os.Stat(filename); errors.Is(err, os.ErrNotExist) {
 			continue
 		}
-		if time.Now().Second()-timeCount.Second() >= 9 {
+		if time.Now().Sub(timeCount) >= time.Second*time.Duration(reduceReplay.TimeOutLimit-1) {
+			log.Printf("reduce process timeout")
 			return false
 		}
 		os.Remove(filename)
@@ -300,7 +324,7 @@ func call(rpcname string, args interface{}, reply interface{}) bool {
 	sockname := coordinatorSock()
 	c, err := rpc.DialHTTP("unix", sockname)
 	if err != nil {
-		log.Printf("dialing:", err)
+		log.Printf("dialing: %v %v", rpcname, err)
 		return false
 	}
 	defer c.Close()

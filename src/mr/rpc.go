@@ -25,16 +25,18 @@ type ExampleReply struct {
 // Add your RPC definitions here.
 
 type MapReplay struct {
-	Filename string
-	MapId    int
-	NReduce  int
-	WorkId   int
+	Filename     string
+	MapId        int
+	NReduce      int
+	WorkId       int
+	TimeOutLimit int
 }
 
 type ReduceReplay struct {
-	ReduceId int
-	NMap     int
-	WorkId   int
+	ReduceId     int
+	NMap         int
+	WorkId       int
+	TimeOutLimit int
 }
 
 type MapMessage struct {
