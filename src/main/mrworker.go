@@ -10,7 +10,10 @@ package main
 // Please do not change this file.
 //
 
-import "6.824/mr"
+import (
+	"6.824/mr"
+	"runtime"
+)
 import "plugin"
 import "os"
 import "fmt"
@@ -21,7 +24,8 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Usage: mrworker xxx.so\n")
 		os.Exit(1)
 	}
-
+	//runtime.GOMAXPROCS(1)
+	log.Printf("cpu: %v", runtime.NumCPU())
 	mapf, reducef := loadPlugin(os.Args[1])
 
 	mr.Worker(mapf, reducef)

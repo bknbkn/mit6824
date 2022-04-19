@@ -190,7 +190,7 @@ func MakeCoordinator(files []string, nReduce int) *Coordinator {
 	c.MTimeCost = make([]time.Time, c.NMap)
 	c.RTimeCost = make([]time.Time, c.NReduce)
 	c.MDMutex = sync.NewCond(&sync.Mutex{})
-	c.TimeOutLimit = 21
+	c.TimeOutLimit = 11
 	c.server()
 	return &c
 }

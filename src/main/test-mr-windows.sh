@@ -3,9 +3,7 @@
 #
 # map-reduce tests
 #
-#cp -r /mnt/c/software_forwork/mit/6.824/ ~/mit/6.824/src/main/6.824/
-rsync -aq --progress /mnt/c/software_forwork/mit/6.824/ ~/mit/6.824/src/main/6.824/ --exclude .git
-cd ~/mit/6.824/src/main/6.824/src/main || exit 1
+
 # comment this out to run the tests without the Go race detector.
 RACE=-race
 
@@ -49,16 +47,16 @@ rm -f mr-*
 # make sure software is freshly built.
 (cd ../../mrapps && go clean)
 (cd .. && go clean)
-(cd ../../mrapps && go build $RACE -buildmode=plugin wc.go) || exit 1
-(cd ../../mrapps && go build $RACE -buildmode=plugin indexer.go) || exit 1
-(cd ../../mrapps && go build $RACE -buildmode=plugin mtiming.go) || exit 1
-(cd ../../mrapps && go build $RACE -buildmode=plugin rtiming.go) || exit 1
-(cd ../../mrapps && go build $RACE -buildmode=plugin jobcount.go) || exit 1
-(cd ../../mrapps && go build $RACE -buildmode=plugin early_exit.go) || exit 1
-(cd ../../mrapps && go build $RACE -buildmode=plugin crash.go) || exit 1
-(cd ../../mrapps && go build $RACE -buildmode=plugin nocrash.go) || exit 1
+#(cd ../../mrapps && go build $RACE -buildmode=plugin wc.go) || exit 1
+#(cd ../../mrapps && go build $RACE -buildmode=plugin indexer.go) || exit 1
+#(cd ../../mrapps && go build $RACE -buildmode=plugin mtiming.go) || exit 1
+#(cd ../../mrapps && go build $RACE -buildmode=plugin rtiming.go) || exit 1
+#(cd ../../mrapps && go build $RACE -buildmode=plugin jobcount.go) || exit 1
+#(cd ../../mrapps && go build $RACE -buildmode=plugin early_exit.go) || exit 1
+#(cd ../../mrapps && go build $RACE -buildmode=plugin crash.go) || exit 1
+#(cd ../../mrapps && go build $RACE -buildmode=plugin nocrash.go) || exit 1
 (cd .. && go build $RACE mrcoordinator.go) || exit 1
-(cd .. && go build $RACE mrworker.go) || exit 1
+(cd .. && go build $RACE mrworker_windows.go) || exit 1
 (cd .. && go build $RACE mrsequential.go) || exit 1
 
 failed_any=0
@@ -67,9 +65,9 @@ failed_any=0
 # first word-count
 
 # generate the correct output
-../mrsequential ../../mrapps/wc.so ../pg*txt || exit 1
-sort mr-out-0 > mr-correct-wc.txt
-rm -f mr-out*
+#../mrsequential ../../mrapps/wc.so ../pg*txt || exit 1
+#sort mr-out-0 > mr-correct-wc.txt
+#rm -f mr-out*
 
 echo '***' Starting wc test.
 
@@ -80,9 +78,9 @@ pid=$!
 sleep 1
 
 # start multiple workers.
-$TIMEOUT ../mrworker ../../mrapps/wc.so &
-$TIMEOUT ../mrworker ../../mrapps/wc.so &
-$TIMEOUT ../mrworker ../../mrapps/wc.so &
+$TIMEOUT ../mrworker_windows &
+$TIMEOUT ../mrworker_windows &
+$TIMEOUT ../mrworker_windows &
 #$TIMEOUT ../mrworker ../../mrapps/wc.so &
 #$TIMEOUT ../mrworker ../../mrapps/wc.so &
 #$TIMEOUT ../mrworker ../../mrapps/wc.so &
@@ -108,7 +106,7 @@ fi
 
 # wait for remaining workers and coordinator to exit.
 wait
-
+exit
 ########################################################
 # now indexer
 rm -f mr-*
@@ -217,7 +215,7 @@ else
 fi
 
 wait
-#exit
+
 #########################################################
 # test whether any worker or coordinator exits before the
 # task has completed (i.e., all output files have been finalized)

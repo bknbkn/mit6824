@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"path/filepath"
+	"runtime/pprof"
 	"sort"
 	"strconv"
 	"strings"
@@ -36,10 +38,25 @@ func (a ByKey) Less(i, j int) bool { return a[i].Key < a[j].Key }
 // use ihash(key) % NReduce to choose the reduce
 // task number for each KeyValue emitted by Map.
 //
+
 func ihash(key string) int {
 	h := fnv.New32a()
 	h.Write([]byte(key))
 	return int(h.Sum32() & 0x7fffffff)
+}
+
+func mapCpuDetector(f func()) {
+	dir, err := os.Getwd()
+	if err != nil {
+		log.Fatalln("get current dir failed")
+	}
+
+	filename := filepath.Join(filepath.Dir(dir), "pprof", "cpu_profile")
+	log.Printf("pprof dir: %v", filename)
+	outFile, _ := os.Create(filename)
+	_ = pprof.StartCPUProfile(outFile)
+	defer pprof.StopCPUProfile()
+	f()
 }
 
 //
@@ -52,6 +69,7 @@ func Worker(mapf func(string, string) []KeyValue,
 	tryTime := 5
 	timeDuringCall := 1
 	//log.Printf("trh %v", runtime.GOMAXPROCS(0))
+
 	for {
 		mapReplay, err := GetMapInfo()
 		if err != nil {
@@ -121,18 +139,21 @@ func MapProcess(mapf func(string, string) []KeyValue, mapReplay *MapReplay) bool
 		return false
 	}
 	content, err := ioutil.ReadAll(file)
+
 	if err != nil {
 		log.Printf("cannot read %v", filename)
 		return false
 	}
+	file.Close()
+	//log.Printf("Before sort mapid: %v workId: %v", mapReplay.MapId, mapReplay.WorkId)
 	kva := mapf(filename, string(content))
+	//log.Printf("After sort mapid: %v workId: %v", mapReplay.MapId, mapReplay.WorkId)
 	intermediate = append(intermediate, kva...)
-
 	sort.Sort(ByKey(intermediate))
-
 	oname := "mr-out-" + strconv.Itoa(mapReplay.MapId) + "-"
 
 	fileNameMap := make(map[int]int)
+	//ioCost := time.Duration(0)
 	for i := 0; i < len(intermediate); {
 		j := i + 1
 		for j < len(intermediate) && intermediate[j].Key == intermediate[i].Key {
@@ -159,10 +180,11 @@ func MapProcess(mapf func(string, string) []KeyValue, mapReplay *MapReplay) bool
 			ofile.Close()
 			return false
 		}
+		//ioStart := time.Now()
 		write := bufio.NewWriter(ofile)
 		for k := i; k < j; k++ {
 			outString := fmt.Sprintf("%v,%v\n", intermediate[i].Key, intermediate[i].Value)
-			//log.Printf("out_string: %v", outString)
+			//log.Printf("out_string: %v", len(outString))
 			//ofile.WriteString(outString)
 			write.WriteString(outString)
 		}
@@ -173,8 +195,10 @@ func MapProcess(mapf func(string, string) []KeyValue, mapReplay *MapReplay) bool
 		}
 		write.Flush()
 		ofile.Close()
+		//ioCost += time.Now().Sub(ioStart)
 		i = j
 	}
+	//log.Println("io time : ", ioCost)
 	return true
 }
 
