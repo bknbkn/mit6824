@@ -8,7 +8,10 @@ package main
 // go build -buildmode=plugin crash.go
 //
 
-import "6.824/mr"
+import (
+	"6.824/mr"
+	"path/filepath"
+)
 import "math/rand"
 import "strings"
 import "strconv"
@@ -32,13 +35,25 @@ func Map(filename string, contents string) []mr.KeyValue {
 }
 
 func Reduce(key string, values []string) string {
-	files, err := ioutil.ReadDir(".")
+	root := "."
+	var files []string
+	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		files = append(files, path)
+		return nil
+	})
 	if err != nil {
 		panic(err)
 	}
+	//for _, file := range files {
+	//	fmt.Println(file)
+	//}
+	//files, err := ioutil.ReadDir(".")
+	//if err != nil {
+	//	panic(err)
+	//}
 	invocations := 0
 	for _, f := range files {
-		if strings.HasPrefix(f.Name(), "mr-worker-jobcount") {
+		if strings.HasPrefix(f, "mr-worker-jobcount") {
 			invocations++
 		}
 	}

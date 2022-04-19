@@ -130,7 +130,7 @@ func MapProcess(mapf func(string, string) []KeyValue, mapReplay *MapReplay) bool
 
 	sort.Sort(ByKey(intermediate))
 
-	oname := "mr-out-" + strconv.Itoa(mapReplay.MapId) + "-"
+	oname := "mr-" + strconv.Itoa(mapReplay.MapId) + "-"
 
 	fileNameMap := make(map[int]int)
 	for i := 0; i < len(intermediate); {
@@ -184,10 +184,11 @@ func ReduceProcess(reducef func(string, []string) string, reduceReplay *ReduceRe
 	log.Printf("get reduceid :%v, workid: %v", reduceId, reduceReplay.WorkId)
 	var contents string
 	for i := 0; i < reduceReplay.NMap; i++ {
-		filename := "mr-out-" + strconv.Itoa(i) + "-" + strconv.Itoa(reduceId) + ".txt"
+		filename := "mr-" + strconv.Itoa(i) + "-" + strconv.Itoa(reduceId) + ".txt"
 		if _, err := os.Stat(filename); errors.Is(err, os.ErrNotExist) {
 			continue
 		}
+		log.Printf("reduce i : %v", i)
 		file, err := os.Open(filename)
 		if err != nil {
 			log.Printf("cannot open %v", filename)
@@ -198,9 +199,11 @@ func ReduceProcess(reducef func(string, []string) string, reduceReplay *ReduceRe
 		file.Close()
 		if err != nil {
 			log.Printf("cannot read %v", filename)
+			file.Close()
 			return false
 		}
 		contents += string(content)
+		//log.Printf("content %v ", contents)
 	}
 	oname := "mr-out-" + strconv.Itoa(reduceId) + ".txt"
 	ofile, _ := os.Create(oname)
@@ -216,6 +219,7 @@ func ReduceProcess(reducef func(string, []string) string, reduceReplay *ReduceRe
 		intermediate = append(intermediate, kv)
 	}
 	sort.Sort(ByKey(intermediate))
+	log.Printf("len : %v", len(intermediate))
 	for i := 0; i < len(intermediate); {
 		j := i + 1
 		for j < len(intermediate) && intermediate[j].Key == intermediate[i].Key {
@@ -225,7 +229,39 @@ func ReduceProcess(reducef func(string, []string) string, reduceReplay *ReduceRe
 		for k := i; k < j; k++ {
 			values = append(values, intermediate[k].Value)
 		}
+
+		//f2, _ := os.Open(".")
+		//files2, _ := f2.Readdir(-1)
+		//for _, file := range files2 {
+		//	fmt.Println(file.Name())
+		//}
+		//root := "."
+		//var files []string
+		//err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		//	files = append(files, path)
+		//	return nil
+		//})
+		//if err != nil {
+		//	panic(err)
+		//}
+		//for _, file := range files {
+		//	fmt.Println(file)
+		//}
+
+		//files, err := ioutil.ReadDir(".")
+		//if err != nil {
+		//	panic(err)
+		//}
+		//invocations := 0
+		//for _, f := range files {
+		//	if strings.HasPrefix(f.Name(), "mr-worker-jobcount") {
+		//		invocations++
+		//		log.Printf("fname: %v %v %v", f.Name(), reduceReplay.ReduceId, reduceReplay.WorkId)
+		//	}
+		//}
+		//log.Printf("out: %v", invocations)
 		output := reducef(intermediate[i].Key, values)
+		//log.Printf("out2: %v", output)
 		if time.Now().Sub(timeCount) >= time.Second*time.Duration(reduceReplay.TimeOutLimit-1) {
 			log.Printf("reduce process timeout")
 			return false
@@ -234,17 +270,17 @@ func ReduceProcess(reducef func(string, []string) string, reduceReplay *ReduceRe
 		i = j
 	}
 
-	for i := 0; i < reduceReplay.NMap; i++ {
-		filename := "mr-out-" + strconv.Itoa(i) + "-" + strconv.Itoa(reduceId) + ".txt"
-		if _, err := os.Stat(filename); errors.Is(err, os.ErrNotExist) {
-			continue
-		}
-		if time.Now().Sub(timeCount) >= time.Second*time.Duration(reduceReplay.TimeOutLimit-1) {
-			log.Printf("reduce process timeout")
-			return false
-		}
-		os.Remove(filename)
-	}
+	//for i := 0; i < reduceReplay.NMap; i++ {
+	//	filename := "mr-" + strconv.Itoa(i) + "-" + strconv.Itoa(reduceId) + ".txt"
+	//	if _, err := os.Stat(filename); errors.Is(err, os.ErrNotExist) {
+	//		continue
+	//	}
+	//	if time.Now().Sub(timeCount) >= time.Second*time.Duration(reduceReplay.TimeOutLimit-1) {
+	//		log.Printf("reduce process timeout")
+	//		return false
+	//	}
+	//	os.Remove(filename)
+	//}
 	return true
 }
 
