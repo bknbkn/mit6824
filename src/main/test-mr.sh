@@ -4,8 +4,8 @@
 # map-reduce tests
 #
 #cp -r /mnt/c/software_forwork/mit/6.824/ ~/mit/6.824/src/main/6.824/
-rsync -aq --progress /mnt/c/software_forwork/mit/6.824/ ~/mit/6.824/src/main/6.824/ --exclude .git
-cd ~/mit/6.824/src/main/6.824/src/main || exit 1
+rsync -aq --progress ../../ ~/mit/6.824/ --exclude .git
+cd ~/mit/6.824/src/main/ || exit 1
 # comment this out to run the tests without the Go race detector.
 RACE=-race
 
