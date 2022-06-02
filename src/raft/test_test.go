@@ -140,13 +140,12 @@ func TestBasicAgree2B(t *testing.T) {
 		if nd > 0 {
 			t.Fatalf("some have committed before Start()")
 		}
-
 		xindex := cfg.one(index*100, servers, false)
 		if xindex != index {
 			t.Fatalf("got index %v but expected %v", xindex, index)
 		}
+		//log.Printf("IOK %v", index)
 	}
-
 	cfg.end()
 }
 
@@ -300,6 +299,7 @@ func TestFailAgree2B(t *testing.T) {
 	cfg.one(105, servers-1, false)
 
 	// re-connect
+	//log.Printf("re-connect")
 	cfg.connect((leader + 1) % servers)
 
 	// the full set of servers should preserve
