@@ -61,17 +61,17 @@ func TestReElection2A(t *testing.T) {
 	cfg.begin("Test (2A): election after network failure")
 
 	leader1 := cfg.checkOneLeader()
-	log.Printf("leader: %v", leader1)
+	//log.Printf("leader: %v", leader1)
 	// if the leader disconnects, a new one should be elected.
 	cfg.disconnect(leader1)
 	cfg.checkOneLeader()
-	log.Println("new one successfully")
+	//log.Println("new one successfully")
 	// if the old leader rejoins, that shouldn't
 	// disturb the new leader. and the old leader
 	// should switch to follower.
 	cfg.connect(leader1)
 	leader2 := cfg.checkOneLeader()
-	log.Println("old one successfully")
+	//log.Println("old one successfully")
 
 	// if there's no quorum, no new leader should
 	// be elected.
@@ -400,13 +400,16 @@ loop:
 					return
 				}
 				is <- i
+				//log.Printf("Get return is %v", i)
 			}(ii)
 		}
 
 		wg.Wait()
 		close(is)
+		//log.Printf("Reach Close")
 
 		for j := 0; j < servers; j++ {
+			//log.Printf("JJJJJJ %v", j)
 			if t, _ := cfg.rafts[j].GetState(); t != term {
 				// term changed -- can't expect low RPC counts
 				continue loop
@@ -477,6 +480,7 @@ func TestRejoin2B(t *testing.T) {
 	leader1 := cfg.checkOneLeader()
 	cfg.disconnect(leader1)
 
+	log.Printf("disconnect leader")
 	// make old leader try to agree on some entries
 	cfg.rafts[leader1].Start(102)
 	cfg.rafts[leader1].Start(103)

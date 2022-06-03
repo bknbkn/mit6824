@@ -142,14 +142,14 @@ func (cfg *config) checkLogs(i int, m ApplyMsg) (string, bool) {
 	v := m.Command
 	for j := 0; j < len(cfg.logs); j++ {
 		if old, oldok := cfg.logs[j][m.CommandIndex]; oldok && old != v {
-			log.Printf("%v: log %v; server %v\n", i, cfg.logs[i], cfg.logs[j])
+			//log.Printf("cfg.checklogs, Server %v: logi %v logj%v\n", i, cfg.logs[i], cfg.logs[j])
 			// some server has already committed a different value for this entry!
 			err_msg = fmt.Sprintf("commit index=%v server=%v %v != server=%v %v",
 				m.CommandIndex, i, m.Command, j, old)
 		}
 	}
 	_, prevok := cfg.logs[i][m.CommandIndex-1]
-	log.Printf("i %v logs %v", i, cfg.logs[i])
+	//log.Printf("cfg.checklogs: server i: %v logs %v", i, cfg.logs[i])
 	cfg.logs[i][m.CommandIndex] = v
 	if m.CommandIndex > cfg.maxIndex {
 		cfg.maxIndex = m.CommandIndex
@@ -504,7 +504,7 @@ func (cfg *config) nCommitted(index int) (int, interface{}) {
 
 		cfg.mu.Lock()
 		cmd1, ok := cfg.logs[i][index]
-		log.Printf("cmd i: %v, index:%v", i, ok)
+		//log.Printf("cfg.nCommit, server i: %v, index :%v, getindex:%v", i, index, ok)
 		cfg.mu.Unlock()
 
 		if ok {
