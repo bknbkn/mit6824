@@ -730,7 +730,7 @@ func TestPersist12C(t *testing.T) {
 	cfg.connect(i3)
 
 	cfg.one(16, servers, true)
-
+	log.Printf("SUCCESS")
 	cfg.end()
 }
 
