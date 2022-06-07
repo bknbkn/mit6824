@@ -94,8 +94,8 @@ func (rf *Raft) GetState() (int, bool) {
 	var term int
 	var isleader bool
 	// Your code here (2A).
-	rf.mu.Lock()
-	defer rf.mu.Unlock()
+	//rf.mu.Lock()
+	//defer rf.mu.Unlock()
 	term, isleader = rf.currentTerm, rf.isLeader
 	return term, isleader
 }
@@ -430,22 +430,20 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	isLeader := true
 
 	// Your code here (2B).
+	rf.mu.Lock()
 	term, isLeader = rf.GetState()
 	if isLeader {
 		//log.Printf("rf %v start entry is %v", rf.me, command)
-		rf.mu.Lock()
 		rf.logs = append(rf.logs, LogEntry{Term: rf.currentTerm, Command: command})
 		rf.lastApplied++
 		index = rf.lastApplied
 		//rf.persist()
-		rf.mu.Unlock()
 		//time.Sleep(10 * time.Millisecond)
 		//log.Printf("sum: %v", sumSuccess)
 	} else {
-		rf.mu.Lock()
 		index = rf.lastApplied
-		rf.mu.Unlock()
 	}
+	rf.mu.Unlock()
 	return index, term, isLeader
 }
 
@@ -485,11 +483,15 @@ func (rf *Raft) VoteOperation(term int, rpcTimeOut int) {
 	//log.Printf("leader dead, server %v request vote......", rf.me)
 	rf.voteStatus = 1
 	rf.voteFor = rf.me
+	//log.Printf("Before Server %v (address is %p) become to send vote req to server",
+	//	rf.me, rf)
+
 	//rf.currentTerm += 1
 	//}
 	//term := rf.currentTerm
 	lastLogIndex := rf.lastApplied
 	var LastLogTerm int
+
 	if lastLogIndex >= 0 {
 		LastLogTerm = rf.logs[lastLogIndex].Term
 	} else {
@@ -504,11 +506,13 @@ func (rf *Raft) VoteOperation(term int, rpcTimeOut int) {
 	}
 	wg := sync.WaitGroup{}
 	var voteNum int32 = 1
+
 	for i := 0; i < len(rf.peers); i++ {
 		if i == rf.me {
 			continue
 		}
 		//rf.mu.Lock()
+
 		if int(atomic.LoadInt32(&voteNum)) > len(rf.peers)/2 {
 			//rf.mu.Unlock()
 			break
@@ -568,9 +572,9 @@ func (rf *Raft) VoteOperation(term int, rpcTimeOut int) {
 		//rf.logs = append(rf.logs, &LogEntry{Term: rf.currentTerm})
 		//rf.lastApplied++
 		rf.mu.Unlock()
-		//log.Printf("sever %v become leader", rf.me)
+		log.Printf("sever %v become leader", rf.me)
 		//time.Sleep(5 * time.Millisecond)
-		rf.LeaderOperation(rf.currentTerm, rpcTimeOut)
+		go rf.LeaderOperation(rf.currentTerm, rpcTimeOut)
 	} else {
 		rf.mu.Unlock()
 		//log.Printf("sever %v cant become leader", rf.me)
@@ -681,18 +685,22 @@ func (rf *Raft) ticker() {
 		// be started and to randomize sleeping time using
 		// time.Sleep().
 		rf.persist()
-		followerDur := rand.Intn(200) + 400
+		followerDur := rand.Intn(150) + 150
 		leaderDur := 150
 		//commitDur := 100
-		rpcTimeOut := 150
+		rpcTimeOut := 100
 		timeFollower := time.After(time.Duration(followerDur) * time.Millisecond)
+		time.Sleep(time.Duration(leaderDur) * time.Millisecond)
 		term, isLeader := rf.GetState()
-		timeLeader := time.After(time.Duration(10000) * time.Second)
+		//timeLeader := time.After(time.Duration(10000) * time.Second)
 		//timeCommit := time.After(time.Duration(10000) * time.Second)
 		if isLeader {
-			timeLeader = time.After(time.Duration(leaderDur) * time.Millisecond)
+			rf.Commit()
+			go rf.LeaderOperation(term, rpcTimeOut)
+			//timeLeader = time.After(time.Duration(leaderDur) * time.Millisecond)
 			//timeCommit = time.After(time.Duration(commitDur) * time.Millisecond)
-			timeFollower = time.After(time.Duration(10000) * time.Second)
+			//timeFollower = time.After(time.Duration(10000) * time.Second)
+			continue
 		}
 		select {
 		case <-rf.heartBeat:
@@ -700,9 +708,7 @@ func (rf *Raft) ticker() {
 			continue
 		case <-timeFollower:
 			rf.VoteOperation(term, rpcTimeOut)
-		case <-timeLeader:
-			rf.Commit()
-			go rf.LeaderOperation(term, rpcTimeOut)
+			//case <-timeLeader:
 			//case <-timeCommit:
 			//	log.Printf("TimeCommit %v", rf.currentTerm)
 			//if sumSuccess > int32(len(rf.peers)/2) {
