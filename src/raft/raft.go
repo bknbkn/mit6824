@@ -321,6 +321,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 		(args.LastLogTerm == logTerm && args.LastLogIndex >= rf.lastApplied) {
 		rf.voteFor = args.CandidateId
 		//rf.persist()
+		rf.heartBeat <- struct{}{}
 		reply.VoteGranted = true
 	}
 	return
@@ -374,29 +375,24 @@ func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *Reques
 // term. the third return value is true if this server believes it is
 // the leader.
 //
-func (rf *Raft) Commit(rpcTimeOut int) bool {
-loopA:
-	for rf.killed() == false {
+func (rf *Raft) Commit() bool {
+	if rf.killed() == false {
 		rf.mu.Lock()
-		if !rf.isLeader {
-			rf.mu.Unlock()
-			continue
-		}
-		lastTerm := rf.logs[rf.lastApplied].Term
+		//lastTerm := rf.logs[rf.lastApplied].Term
 		commitIndex := rf.lastApplied
-		term := rf.currentTerm
+		//term := rf.currentTerm
 		rf.matchIndex[rf.me] = rf.lastApplied
-		if lastTerm != rf.currentTerm {
-			//log.Printf("LASTTIME != CURRENT %v %v %v %v", lastTerm, rf.currentTerm,
-			//	rf.commitIndex, commitIndex)
-			rf.mu.Unlock()
-			continue loopA
-		}
+		//if lastTerm != rf.currentTerm {
+		//	//log.Printf("LASTTIME != CURRENT %v %v %v %v", lastTerm, rf.currentTerm,
+		//	//	rf.commitIndex, commitIndex)
+		//	rf.mu.Unlock()
+		//	continue loopA
+		//}
 	loop:
 		for ; ; commitIndex-- {
-			if commitIndex <= rf.commitIndex {
+			if rf.logs[commitIndex].Term != rf.currentTerm || commitIndex <= rf.commitIndex {
 				rf.mu.Unlock()
-				continue loopA
+				return false
 			}
 			count := 0
 			for i := 0; i < len(rf.peers); i++ {
@@ -422,9 +418,9 @@ loopA:
 				CommandIndex: i,
 			}
 		}
-		rf.LeaderOperation(term, true, rpcTimeOut)
+		//rf.LeaderOperation(term, true, rpcTimeOut)
 		//log.Printf("Server %v commit id is %v", rf.me, rf.commitIndex)
-		time.Sleep(150 * time.Millisecond)
+		//time.Sleep(150 * time.Millisecond)
 	}
 	return false
 }
@@ -480,17 +476,17 @@ func (rf *Raft) VoteOperation(term int, rpcTimeOut int) {
 	}
 	timeLimit := time.After(time.Duration(rpcTimeOut) * time.Millisecond)
 	rf.mu.Lock()
-	if rf.voteFor != -1 {
-		rf.voteFor = -1
-		//rf.persist()
-		rf.mu.Unlock()
-		return
-	} else {
-		//log.Printf("leader dead, server %v request vote......", rf.me)
-		rf.voteStatus = 1
-		rf.voteFor = rf.me
-		//rf.currentTerm += 1
-	}
+	//if rf.voteFor != -1 {
+	//	rf.voteFor = -1
+	//	//rf.persist()
+	//	rf.mu.Unlock()
+	//	return
+	//} else {
+	//log.Printf("leader dead, server %v request vote......", rf.me)
+	rf.voteStatus = 1
+	rf.voteFor = rf.me
+	//rf.currentTerm += 1
+	//}
 	//term := rf.currentTerm
 	lastLogIndex := rf.lastApplied
 	var LastLogTerm int
@@ -513,7 +509,7 @@ func (rf *Raft) VoteOperation(term int, rpcTimeOut int) {
 			continue
 		}
 		//rf.mu.Lock()
-		if int(voteNum) > len(rf.peers)/2 {
+		if int(atomic.LoadInt32(&voteNum)) > len(rf.peers)/2 {
 			//rf.mu.Unlock()
 			break
 		}
@@ -573,8 +569,8 @@ func (rf *Raft) VoteOperation(term int, rpcTimeOut int) {
 		//rf.lastApplied++
 		rf.mu.Unlock()
 		//log.Printf("sever %v become leader", rf.me)
-		time.Sleep(5 * time.Millisecond)
-		rf.LeaderOperation(rf.currentTerm, true, rpcTimeOut)
+		//time.Sleep(5 * time.Millisecond)
+		rf.LeaderOperation(rf.currentTerm, rpcTimeOut)
 	} else {
 		rf.mu.Unlock()
 		//log.Printf("sever %v cant become leader", rf.me)
@@ -584,11 +580,8 @@ func (rf *Raft) VoteOperation(term int, rpcTimeOut int) {
 	atomic.StoreInt32(&rf.voteStatus, 0)
 }
 
-func (rf *Raft) LeaderOperation(term int, isLeader bool, rpcTimeOut int) {
-	if rf.killed() {
-		return
-	}
-	if isLeader {
+func (rf *Raft) LeaderOperation(term int, rpcTimeOut int) {
+	if rf.killed() == false {
 		//var sumSuccess int32
 		//update := false
 		timeLimit := time.After(time.Duration(rpcTimeOut) * time.Millisecond)
@@ -673,16 +666,16 @@ func (rf *Raft) LeaderOperation(term int, isLeader bool, rpcTimeOut int) {
 		//} else {
 		//	return 0
 		//}
+		//else {
+		//	return 0
+		//}
 	}
-	//else {
-	//	return 0
-	//}
 }
 
 // The ticker go routine starts a new election if this peer hasn't received
 // heartsbeats recently.
 func (rf *Raft) ticker() {
-	go rf.Commit(150)
+	//go rf.Commit(150)
 	for rf.killed() == false {
 		// Your code here to check if a leader election should
 		// be started and to randomize sleeping time using
@@ -708,7 +701,8 @@ func (rf *Raft) ticker() {
 		case <-timeFollower:
 			rf.VoteOperation(term, rpcTimeOut)
 		case <-timeLeader:
-			go rf.LeaderOperation(term, isLeader, rpcTimeOut)
+			rf.Commit()
+			go rf.LeaderOperation(term, rpcTimeOut)
 			//case <-timeCommit:
 			//	log.Printf("TimeCommit %v", rf.currentTerm)
 			//if sumSuccess > int32(len(rf.peers)/2) {
