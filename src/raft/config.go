@@ -468,6 +468,7 @@ func (cfg *config) checkTerms() int {
 	for i := 0; i < cfg.n; i++ {
 		if cfg.connected[i] {
 			xterm, _ := cfg.rafts[i].GetState()
+			log.Printf("Server Term server: %v, term: %v", i, xterm)
 			if term == -1 {
 				term = xterm
 			} else if term != xterm {
