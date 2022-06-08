@@ -382,12 +382,6 @@ func (rf *Raft) Commit() bool {
 		commitIndex := rf.lastApplied
 		//term := rf.currentTerm
 		rf.matchIndex[rf.me] = rf.lastApplied
-		//if lastTerm != rf.currentTerm {
-		//	//log.Printf("LASTTIME != CURRENT %v %v %v %v", lastTerm, rf.currentTerm,
-		//	//	rf.commitIndex, commitIndex)
-		//	rf.mu.Unlock()
-		//	continue loopA
-		//}
 	loop:
 		for ; ; commitIndex-- {
 			if rf.logs[commitIndex].Term != rf.currentTerm || commitIndex <= rf.commitIndex {
@@ -408,7 +402,6 @@ func (rf *Raft) Commit() bool {
 		//rf.logs = append(rf.logs, &LogEntry{Term: rf.currentTerm, Command: "Commit"})
 		lastCommitIndex := rf.commitIndex
 		rf.commitIndex = commitIndex
-		//rf.lastApplied++
 		rf.mu.Unlock()
 		for i := lastCommitIndex + 1; i <= commitIndex; i++ {
 			command := rf.logs[i].Command
@@ -418,9 +411,7 @@ func (rf *Raft) Commit() bool {
 				CommandIndex: i,
 			}
 		}
-		//rf.LeaderOperation(term, true, rpcTimeOut)
 		//log.Printf("Server %v commit id is %v", rf.me, rf.commitIndex)
-		//time.Sleep(150 * time.Millisecond)
 	}
 	return false
 }
@@ -468,27 +459,15 @@ func (rf *Raft) killed() bool {
 	return z == 1
 }
 
-func (rf *Raft) VoteOperation(term int, rpcTimeOut int) {
+func (rf *Raft) VoteOperation(term int, rpcTimeOut int) bool {
 	if rf.killed() {
-		return
+		return false
 	}
 	timeLimit := time.After(time.Duration(rpcTimeOut) * time.Millisecond)
 	rf.mu.Lock()
-	//if rf.voteFor != -1 {
-	//	rf.voteFor = -1
-	//	//rf.persist()
-	//	rf.mu.Unlock()
-	//	return
-	//} else {
 	//log.Printf("leader dead, server %v request vote......", rf.me)
 	rf.voteStatus = 1
 	rf.voteFor = rf.me
-	//log.Printf("Before Server %v (address is %p) become to send vote req to server",
-	//	rf.me, rf)
-
-	//rf.currentTerm += 1
-	//}
-	//term := rf.currentTerm
 	lastLogIndex := rf.lastApplied
 	var LastLogTerm int
 
@@ -511,15 +490,13 @@ func (rf *Raft) VoteOperation(term int, rpcTimeOut int) {
 		if i == rf.me {
 			continue
 		}
-		//rf.mu.Lock()
-
 		if int(atomic.LoadInt32(&voteNum)) > len(rf.peers)/2 {
-			//rf.mu.Unlock()
 			break
 		}
 		wg.Add(1)
 		//rf.mu.Unlock()
 		go func(i int) {
+			defer wg.Done()
 			//log.Printf("Server %v (address is %p) become to send vote req to server %v ",
 			//	rf.me, rf, i)
 			requestVoteReply := RequestVoteReply{}
@@ -527,22 +504,15 @@ func (rf *Raft) VoteOperation(term int, rpcTimeOut int) {
 				//log.Printf("Server %v (address is %p) send vote req to server %v error",
 				//	rf.me, rf, i)
 			} else {
-				//rf.mu.Lock()
-				//defer rf.mu.Unlock()
-				//if rf.currentTerm < requestVoteReply.term {
-				//	rf.currentTerm = requestVoteReply.term
-				//}
 				//log.Printf("Server %v send vote req to server %v successful, get voteGrand %v",
 				//	rf.me, i, requestVoteReply.VoteGranted)
 				if requestVoteReply.VoteGranted {
-					//voteNum += 1
 					atomic.AddInt32(&voteNum, 1)
 				}
 			}
 			if atomic.LoadInt32(&rf.voteStatus) == 0 {
 				return
 			}
-			wg.Done()
 		}(i)
 	}
 	//log.Printf("Server %v waiting for vote req", rf.me)
@@ -558,9 +528,10 @@ func (rf *Raft) VoteOperation(term int, rpcTimeOut int) {
 		//log.Printf("Server %v send vote req finished", rf.me)
 	}
 	if atomic.LoadInt32(&rf.voteStatus) == 0 {
-		return
+		return false
 	}
 	rf.mu.Lock()
+	defer rf.mu.Unlock()
 	rf.voteFor = -1
 	if int(voteNum) > len(rf.peers)/2 {
 		for i := 0; i < len(rf.peers); i++ {
@@ -569,28 +540,26 @@ func (rf *Raft) VoteOperation(term int, rpcTimeOut int) {
 		}
 		rf.isLeader = true
 		rf.currentTerm += 1
-		//rf.logs = append(rf.logs, &LogEntry{Term: rf.currentTerm})
-		//rf.lastApplied++
-		rf.mu.Unlock()
-		log.Printf("sever %v become leader", rf.me)
+		rf.voteStatus = 0
+		//log.Printf("sever %v become leader", rf.me)
+		return true
 		//time.Sleep(5 * time.Millisecond)
-		go rf.LeaderOperation(rf.currentTerm, rpcTimeOut)
 	} else {
-		rf.mu.Unlock()
+		rf.voteStatus = 0
+		return false
 		//log.Printf("sever %v cant become leader", rf.me)
 	}
-	//rf.mu.Lock()
-	//rf.persist()
-	atomic.StoreInt32(&rf.voteStatus, 0)
 }
 
 func (rf *Raft) LeaderOperation(term int, rpcTimeOut int) {
 	if rf.killed() == false {
-		//var sumSuccess int32
-		//update := false
 		timeLimit := time.After(time.Duration(rpcTimeOut) * time.Millisecond)
 		//log.Printf("Server %v (adress is %p) become appending entries, logs is %v",
 		//	rf.me, rf, len(rf.logs))
+		rf.mu.Lock()
+		lastApplied := rf.lastApplied
+		commitIndex := rf.commitIndex
+		rf.mu.Unlock()
 		wg := sync.WaitGroup{}
 		for i := 0; i < len(rf.peers); i++ {
 			if i == rf.me {
@@ -598,16 +567,15 @@ func (rf *Raft) LeaderOperation(term int, rpcTimeOut int) {
 			}
 			wg.Add(1)
 			go func(i int) {
-				rf.mu.Lock()
+				defer wg.Done()
+				//rf.mu.Lock()
 				prevLogIndex := rf.nextIndex[i] - 1
 				prevLogTerm := 0
 				if prevLogIndex >= 0 {
 					prevLogTerm = rf.logs[prevLogIndex].Term
 				}
-				entries := rf.logs[rf.nextIndex[i] : rf.lastApplied+1]
-				matchIndex := rf.lastApplied
-				commitIndex := rf.commitIndex
-				rf.mu.Unlock()
+				entries := rf.logs[rf.nextIndex[i] : lastApplied+1]
+				//rf.mu.Unlock()
 				appendEntriesArgs := AppendEntriesArgs{
 					Term:         term,
 					LeaderId:     rf.me,
@@ -629,7 +597,7 @@ func (rf *Raft) LeaderOperation(term int, rpcTimeOut int) {
 					//if appendEntriesReply.term > rf.currentTerm {
 					//	rf.currentTerm = appendEntriesReply.term
 					//}
-					rf.mu.Lock()
+					//rf.mu.Lock()
 					if !appendEntriesReply.Success {
 						//log.Printf("Follower sever %v reject entries", i)
 						rf.nextIndex[i] = (rf.nextIndex[i] + rf.matchIndex[i]) / 2
@@ -640,17 +608,11 @@ func (rf *Raft) LeaderOperation(term int, rpcTimeOut int) {
 						//log.Printf("leader %v rejust nextIndex %v %v %v", rf.me, i, rf.nextIndex[i], rf.matchIndex[i])
 					} else {
 						//log.Printf("Follower sever %v accept entries", i)
-						rf.nextIndex[i] = matchIndex + 1
-						rf.matchIndex[i] = matchIndex
-						//atomic.AddInt32(&sumSuccess, 1)
-						//if len(entries) > 0 {
-						//	update = true
-						//}
-						//log.Printf("Send to Server %v successful", i)
+						rf.nextIndex[i] = lastApplied + 1
+						rf.matchIndex[i] = lastApplied
 					}
-					rf.mu.Unlock()
+					//rf.mu.Unlock()
 				}
-				wg.Done()
 			}(i)
 		}
 		done := make(chan struct{})
@@ -664,15 +626,6 @@ func (rf *Raft) LeaderOperation(term int, rpcTimeOut int) {
 		case <-done:
 			//log.Printf("Server %v (adress is %p) appending entries finished", rf.me, rf)
 		}
-
-		//if update {
-		//	return sumSuccess + 1
-		//} else {
-		//	return 0
-		//}
-		//else {
-		//	return 0
-		//}
 	}
 }
 
@@ -685,38 +638,30 @@ func (rf *Raft) ticker() {
 		// be started and to randomize sleeping time using
 		// time.Sleep().
 		rf.persist()
-		followerDur := rand.Intn(150) + 150
+		followerDur := rand.Intn(400) + 200
 		leaderDur := 150
 		//commitDur := 100
 		rpcTimeOut := 100
 		timeFollower := time.After(time.Duration(followerDur) * time.Millisecond)
 		time.Sleep(time.Duration(leaderDur) * time.Millisecond)
 		term, isLeader := rf.GetState()
-		//timeLeader := time.After(time.Duration(10000) * time.Second)
-		//timeCommit := time.After(time.Duration(10000) * time.Second)
+		timeLeader := time.After(time.Duration(10000) * time.Second)
 		if isLeader {
-			rf.Commit()
-			go rf.LeaderOperation(term, rpcTimeOut)
-			//timeLeader = time.After(time.Duration(leaderDur) * time.Millisecond)
-			//timeCommit = time.After(time.Duration(commitDur) * time.Millisecond)
-			//timeFollower = time.After(time.Duration(10000) * time.Second)
-			continue
+			timeLeader = time.After(time.Duration(leaderDur) * time.Millisecond)
+			timeFollower = time.After(time.Duration(10000) * time.Second)
 		}
 		select {
 		case <-rf.heartBeat:
 			//log.Printf("server %v get heartBeat", rf.me)
 			continue
 		case <-timeFollower:
-			rf.VoteOperation(term, rpcTimeOut)
-			//case <-timeLeader:
-			//case <-timeCommit:
-			//	log.Printf("TimeCommit %v", rf.currentTerm)
-			//if sumSuccess > int32(len(rf.peers)/2) {
-			//	//log.Printf("NO AGREE")
-			//} else {
-			//	log.Printf("NO AGREE COMMIT, %v", rf.matchIndex)
-			//}
-			//log.Printf("RESULT :%v", result)
+			beLeader := rf.VoteOperation(term, rpcTimeOut)
+			if beLeader {
+				go rf.LeaderOperation(term, rpcTimeOut)
+			}
+		case <-timeLeader:
+			rf.Commit()
+			go rf.LeaderOperation(term, rpcTimeOut)
 		}
 	}
 }
