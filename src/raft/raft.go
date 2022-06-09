@@ -652,7 +652,7 @@ func (rf *Raft) ticker() {
 		leaderDur := 160
 		//commitDur := 100
 		rpcTimeOut := 100
-		voteRpcTime := 50
+		voteRpcTime := 55
 		timeFollower := time.After(time.Duration(followerDur) * time.Millisecond)
 		time.Sleep(time.Duration(voteRpcTime) * time.Millisecond)
 		_, isLeader := rf.GetState()
@@ -669,7 +669,7 @@ func (rf *Raft) ticker() {
 			continue
 		case <-timeFollower:
 			go func() {
-				beLeader := rf.VoteOperation(rpcTimeOut)
+				beLeader := rf.VoteOperation(voteRpcTime - 5)
 				if beLeader {
 					rf.LeaderOperation(rpcTimeOut)
 				}
