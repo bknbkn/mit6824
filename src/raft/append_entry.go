@@ -2,11 +2,8 @@ package raft
 
 import (
 	"log"
-	"sync"
-	"time"
 )
 
-//
 // the service using Raft (e.g. a k/v server) wants to start
 // agreement on the next command to be appended to Raft's log. if this
 // server isn't the leader, returns false. otherwise start the
@@ -29,22 +26,19 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	if rf.currentTerm > args.Term {
 		log.Printf("sever %v current term is %v, leader's term is %v", rf.me, rf.currentTerm, args.Term)
 		return
-	} else if rf.voteStatus == 1 {
-		//log.Printf("rf voteStatus is %v", rf.voteStatus)
-		if rf.currentTerm <= args.Term {
-			rf.voteStatus = 0
-		} else {
-			return
-		}
 	}
-	//rf.mu.Unlock()
 	rf.heartBeat <- struct{}{}
+	//if rf.isCandidate {
+	//log.Printf("rf isCandidate is %v", rf.isCandidate)
+	rf.ChangeToFollow(-1, args.Term)
+	//}
+	//rf.mu.Unlock()
 	//rf.mu.Lock()
-	rf.currentTerm = args.Term
-	//log.Printf("sever %v current term is %v, leader's term is %v", rf.me, rf.currentTerm, args.Term)
-	rf.voteFor = -1
-	//rf.persist()
-	rf.isLeader = false
+	//rf.currentTerm = args.Term
+	////log.Printf("sever %v current term is %v, leader's term is %v", rf.me, rf.currentTerm, args.Term)
+	//rf.voteFor = -1
+	////rf.persist()
+	//rf.isLeader = false
 	log.Printf("args.Prev %v, rf.last %v from %v to rf.me %v %v, append entry %v", args.PrevLogIndex, rf.lastApplied,
 		args.LeaderId, rf.me, args.LeaderCommit, len(args.Entries))
 	if rf.MatchLogs(args.PrevLogIndex, args.PrevLogTerm) {
@@ -57,8 +51,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		//}
 		if commitIndex > rf.commitIndex {
 			lastCommitIndex := rf.commitIndex
-			rf.commitIndex = commitIndex
-			rf.mu.Unlock()
+			//rf.mu.Unlock()
 			log.Printf(" rf commit success %v %v\n", rf.me, rf.commitIndex)
 			rf.CommitApplyCh(lastCommitIndex, commitIndex)
 			//for i := lastCommitIndex + 1; i <= commitIndex; i++ {
@@ -70,13 +63,14 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 			//		CommandIndex: i,
 			//	}
 			//}
-			rf.mu.Lock()
+			//rf.mu.Lock()
+			rf.commitIndex = commitIndex
 			log.Printf("Server %v commit id %v", rf.me, rf.commitIndex)
 		}
 		reply.Success = true
 	} else {
 		if rf.lastApplied >= args.PrevLogIndex {
-			//log.Printf("COMMIT FAIL: args: %v, rf.logs[args.PrevLogIndex].Term %v", args, rf.logs[args.PrevLogIndex].Term)
+			log.Printf("COMMIT FAIL: args: %v, rf.logs[args.PrevLogIndex].Term %v", args, rf.logs[args.PrevLogIndex].Term)
 		} else {
 			//log.Printf("LASTAPP: %v %v", rf.me, rf.lastApplied)
 		}
@@ -89,11 +83,11 @@ func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *Ap
 	return ok
 }
 
-func (rf *Raft) LeaderOperation(rpcTimeOut int) {
+func (rf *Raft) LeaderOperation() {
 	log.Printf("Server %v (adress is %p) become appending entries, logs is %v",
 		rf.me, rf, len(rf.logs))
 	if rf.killed() == false {
-		timeLimit := time.After(time.Duration(rpcTimeOut) * time.Millisecond)
+		//timeLimit := time.After(time.Duration(rpcTimeOut) * time.Millisecond)
 		//rf.mu.Lock()
 		//if !rf.isLeader {
 		//	rf.mu.Unlock()
@@ -106,15 +100,19 @@ func (rf *Raft) LeaderOperation(rpcTimeOut int) {
 		//term := rf.currentTerm
 		//data := rf.GetSnapshotByte(&rf.SnapShotEntry)
 		//rf.mu.Unlock()
-		wg := sync.WaitGroup{}
+		//wg := sync.WaitGroup{}
 		for i := 0; i < len(rf.peers); i++ {
 			if i == rf.me {
 				continue
 			}
-			wg.Add(1)
+			//wg.Add(1)
 			go func(i int) {
-				defer wg.Done()
+				//defer wg.Done()
 				rf.mu.Lock()
+				if !rf.isLeader {
+					rf.mu.Unlock()
+					return
+				}
 				lastApplied := rf.lastApplied
 				lastIncludedIndex := rf.lastIncludedIndex
 				lastIncludedTerm := rf.lastIncludedTerm
@@ -155,8 +153,13 @@ func (rf *Raft) LeaderOperation(rpcTimeOut int) {
 							log.Printf("Server %d send Snapshot to %d success", rf.me, i)
 							rf.nextIndex[i] = lastIncludedIndex + 1
 							rf.matchIndex[i] = lastIncludedIndex
+							rf.matchStep[i] = 1
 							prevLogTerm = lastIncludedTerm
 							prevLogIndex = lastIncludedIndex
+						} else {
+							rf.ChangeToFollow(-1, reply.Term)
+							rf.mu.Unlock()
+							return
 						}
 						rf.mu.Unlock()
 					} else {
@@ -179,8 +182,8 @@ func (rf *Raft) LeaderOperation(rpcTimeOut int) {
 				//	rf.me, rf, i, len(rf.logs))
 				//time.Sleep(20 * time.Millisecond)
 				if ok := rf.sendAppendEntries(i, &appendEntriesArgs, &appendEntriesReply); !ok {
-					log.Printf("Server %v (address is %p) send entries to server %v error",
-						rf.me, rf, i)
+					log.Printf("Server %v (address is %p) send entries to server %v error, rep %v",
+						rf.me, rf, i, appendEntriesReply)
 				} else {
 					//rf.mu.Lock()
 					//defer rf.mu.Unlock()
@@ -188,38 +191,45 @@ func (rf *Raft) LeaderOperation(rpcTimeOut int) {
 					//	rf.currentTerm = appendEntriesReply.term
 					//}
 					rf.mu.Lock()
+					if appendEntriesReply.Term > rf.currentTerm {
+						rf.ChangeToFollow(-1, appendEntriesReply.Term)
+						rf.mu.Unlock()
+						return
+					}
 					if !appendEntriesReply.Success {
-						//log.Printf("Follower sever %v reject entries", i)
+						log.Printf("Leader is %v, Follower sever %v reject entries", rf.me, i)
 						lowerBound := rf.matchIndex[i]
 						if rf.lastIncludedIndex+1 > lowerBound {
 							lowerBound = rf.lastIncludedIndex + 1
 						}
-						rf.nextIndex[i] = (rf.nextIndex[i] + lowerBound) / 2
-						//rf.nextIndex[i]--
-						if rf.nextIndex[i] < 1 {
-							rf.nextIndex[i] = 1
+						//rf.nextIndex[i] = (rf.nextIndex[i] + lowerBound) / 2
+						rf.nextIndex[i] -= rf.matchStep[i]
+						rf.matchStep[i] <<= 1
+						if rf.nextIndex[i] < lowerBound {
+							rf.nextIndex[i] = lowerBound
 						}
 						//log.Printf("leader %v rejust nextIndex %v %v %v", rf.me, i, rf.nextIndex[i], rf.matchIndex[i])
 					} else {
 						rf.nextIndex[i] = lastApplied + 1
 						rf.matchIndex[i] = lastApplied
-						log.Printf("Follower sever %v accept entries, rf.matchIndex[i] %v value : %v commit :%v\n",
-							i, rf.matchIndex[i], rf.logs, rf.commitIndex)
+						rf.matchStep[i] = 1
+						log.Printf("Leader is %v, Follower sever %v accept entries, rf.matchIndex[i] %v value : %v commit :%v\n",
+							rf.me, i, rf.matchIndex[i], rf.logs, rf.commitIndex)
 					}
 					rf.mu.Unlock()
 				}
 			}(i)
 		}
-		done := make(chan struct{})
-		go func() {
-			wg.Wait()
-			close(done)
-		}()
-		select {
-		case <-timeLimit:
-			//log.Printf("Server %v (adress is %p) appending entries timeout", rf.me, rf)
-		case <-done:
-			//log.Printf("Server %v (adress is %p) appending entries finished", rf.me, rf)
-		}
+		//done := make(chan struct{})
+		//go func() {
+		//	wg.Wait()
+		//	close(done)
+		//}()
+		//select {
+		//case <-timeLimit:
+		//	//log.Printf("Server %v (adress is %p) appending entries timeout", rf.me, rf)
+		//case <-done:
+		//	//log.Printf("Server %v (adress is %p) appending entries finished", rf.me, rf)
+		//}
 	}
 }

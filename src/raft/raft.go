@@ -18,7 +18,6 @@ package raft
 //
 
 import (
-	"io/ioutil"
 	"log"
 	"math/rand"
 	//	"bytes"
@@ -61,10 +60,11 @@ type Raft struct {
 	isLeader   bool
 	nextIndex  []int
 	matchIndex []int
+	matchStep  []int
 	heartBeat  chan struct{}
 
-	voteStatus int32
-	applyChan  *chan ApplyMsg
+	isCandidate bool
+	applyChan   *chan ApplyMsg
 
 	// For 2D
 	SnapshotByte []byte
@@ -106,14 +106,14 @@ func (rf *Raft) CommitApplyCh(lastCommitIndex, commitIndex int) {
 		//}
 		//rf.SnapShotCond.L.Unlock()
 		command := rf.GetLogItem(i).Command
-		log.Printf("ALL command: %v commit %v li %v\n", command, i, commitIndex)
+		//log.Printf("ALL command: %v commit %v li %v\n", command, i, commitIndex)
 		*rf.applyChan <- ApplyMsg{
 			SnapshotValid: false,
 			CommandValid:  true,
 			Command:       command,
 			CommandIndex:  i,
 		}
-		log.Printf("ALLFinish command: %v commit %v li %v\n", command, i, commitIndex)
+		//log.Printf("ALLFinish command: %v commit %v li %v\n", command, i, commitIndex)
 	}
 }
 func (rf *Raft) Commit() bool {
@@ -150,9 +150,11 @@ func (rf *Raft) Commit() bool {
 		//	commitIndex = limit
 		//}
 		lastCommitIndex := rf.commitIndex
+		//rf.mu.Unlock()
+		rf.CommitApplyCh(lastCommitIndex, commitIndex)
+		//rf.mu.Lock()
 		rf.commitIndex = commitIndex
 		rf.mu.Unlock()
-		rf.CommitApplyCh(lastCommitIndex, commitIndex)
 		//for i := lastCommitIndex + 1; i <= commitIndex; i++ {
 		//	command := rf.GetLogItem(i).Command
 		//	log.Printf("ALL command: %v commit %v li %v\n", command, i, commitIndex)
@@ -240,7 +242,7 @@ func (rf *Raft) ticker() {
 		followerDur := rand.Intn(300) + 300
 		leaderDur := 160
 		//commitDur := 100
-		rpcTimeOut := 100
+		//rpcTimeOut := 100
 		voteRpcTime := 55
 		timeFollower := time.After(time.Duration(followerDur) * time.Millisecond)
 		time.Sleep(time.Duration(voteRpcTime) * time.Millisecond)
@@ -261,13 +263,13 @@ func (rf *Raft) ticker() {
 			go func() {
 				beLeader := rf.VoteOperation(voteRpcTime - 5)
 				if beLeader {
-					rf.LeaderOperation(rpcTimeOut)
+					rf.LeaderOperation()
 				}
 			}()
 		case <-timeLeader:
 			go func() {
 				rf.Commit()
-				rf.LeaderOperation(rpcTimeOut)
+				rf.LeaderOperation()
 			}()
 		}
 	}
@@ -297,6 +299,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.heartBeat = make(chan struct{}, 10)
 	rf.nextIndex = make([]int, len(rf.peers))
 	rf.matchIndex = make([]int, len(rf.peers))
+	rf.matchStep = make([]int, len(rf.peers))
 	rf.logs = make([]LogEntry, 1, 10)
 	rf.logs[0] = LogEntry{Term: 0}
 	rf.applyChan = &applyCh
@@ -308,7 +311,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	//rf.Snapshot(-1, rf.GetSnapshotByte())
 	log.SetFlags(log.Lmicroseconds)
 	//log.SetFlags(0)
-	log.SetOutput(ioutil.Discard)
+	//log.SetOutput(ioutil.Discard)
 	// initialize from state persisted before a crash
 	rf.readPersist(persister.ReadRaftState())
 	//log.Printf("Server %v", rf.me)

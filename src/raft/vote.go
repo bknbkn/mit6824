@@ -10,6 +10,29 @@ import (
 //
 // example RequestVote RPC handler.
 //
+
+func (rf *Raft) ChangeToLeader() {
+	rf.isLeader = true
+	rf.isCandidate = false
+	for i := 0; i < len(rf.peers); i++ {
+		rf.nextIndex[i] = rf.lastApplied + 1
+		rf.matchIndex[i] = 0
+		rf.matchStep[i] = 1
+	}
+}
+func (rf *Raft) ChangeToCandidate() {
+	rf.currentTerm++
+	rf.isLeader = false
+	rf.isCandidate = true
+	rf.voteFor = rf.me
+}
+func (rf *Raft) ChangeToFollow(voteFor, currentTerm int) {
+	rf.voteFor = voteFor
+	rf.currentTerm = currentTerm
+	rf.isLeader = false
+	rf.isCandidate = false
+}
+
 func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	// Your code here (2A, 2B).
 	rf.mu.Lock()
@@ -18,16 +41,18 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	reply.VoteGranted = false
 	//log.Printf("args is %#v", args)
 	//log.Printf("rf is %#v", *rf)
-	if (rf.voteFor != -1 && rf.voteFor != args.CandidateId) || rf.currentTerm >= args.Term {
+	if rf.currentTerm > args.Term ||
+		(rf.currentTerm == args.Term && rf.voteFor != -1 && rf.voteFor != args.CandidateId) {
 		log.Printf("Server from %v to rf.me %v rf.RequestVote False, rf.voteFor %v, rf.currentTerm %v args.Term %v",
 			args.CandidateId, rf.me, rf.voteFor, rf.currentTerm, args.Term)
 		return
 	}
+	rf.ChangeToFollow(-1, args.Term)
 	logTerm := rf.GetLogItem(rf.lastApplied).Term
 	if (args.LastLogTerm > logTerm) ||
 		(args.LastLogTerm == logTerm && args.LastLogIndex >= rf.lastApplied) {
-		rf.voteFor = args.CandidateId
 		rf.heartBeat <- struct{}{}
+		rf.ChangeToFollow(args.CandidateId, args.Term)
 		reply.VoteGranted = true
 	}
 	return
@@ -73,10 +98,10 @@ func (rf *Raft) VoteOperation(rpcTimeOut int) bool {
 	}
 	timeLimit := time.After(time.Duration(rpcTimeOut) * time.Millisecond)
 	rf.mu.Lock()
+	rf.ChangeToCandidate()
+	log.Printf("leader dead, server %v request vote...... currterm is %v",
+		rf.me, rf.currentTerm)
 	term := rf.currentTerm
-	log.Printf("leader dead, server %v request vote......", rf.me)
-	rf.voteStatus = 1
-	rf.voteFor = rf.me
 	lastLogIndex := rf.lastApplied
 	var LastLogTerm int
 
@@ -87,7 +112,7 @@ func (rf *Raft) VoteOperation(rpcTimeOut int) bool {
 	}
 	rf.mu.Unlock()
 	requestVoteArgs := RequestVoteArgs{
-		Term:         term + 1,
+		Term:         term,
 		CandidateId:  rf.me,
 		LastLogIndex: lastLogIndex,
 		LastLogTerm:  LastLogTerm,
@@ -106,25 +131,38 @@ func (rf *Raft) VoteOperation(rpcTimeOut int) bool {
 		//rf.mu.Unlock()
 		go func(i int) {
 			defer wg.Done()
+			rf.mu.Lock()
+			if !rf.isCandidate {
+				rf.mu.Unlock()
+				return
+			}
+			rf.mu.Unlock()
 			//log.Printf("Server %v (address is %p) become to send vote req to server %v ",
 			//	rf.me, rf, i)
 			requestVoteReply := RequestVoteReply{}
 			if ok := rf.sendRequestVote(i, &requestVoteArgs, &requestVoteReply); !ok {
-				//log.Printf("Server %v (address is %p) send vote req to server %v error",
-				//	rf.me, rf, i)
+				log.Printf("Server %v (address is %p) send vote req to server %v error",
+					rf.me, rf, i)
 			} else {
 				log.Printf("Server %v send vote req to server %v successful, get voteGrand %v",
 					rf.me, i, requestVoteReply.VoteGranted)
-				if requestVoteReply.VoteGranted {
+				rf.mu.Lock()
+				if requestVoteReply.Term > rf.currentTerm {
+					log.Printf("Server %v foller Term is %v, curr Term is %v",
+						rf.me, requestVoteReply.Term, rf.currentTerm)
+					rf.ChangeToFollow(-1, requestVoteReply.Term)
+				} else if requestVoteReply.VoteGranted {
 					atomic.AddInt32(&voteNum, 1)
 				}
+				rf.mu.Unlock()
 			}
-			//if atomic.LoadInt32(&rf.voteStatus) == 0 {
+			//if atomic.LoadInt32(&rf.isCandidate) == 0 {
 			//	return
 			//}
 		}(i)
 	}
 	//log.Printf("Server %v waiting for vote req", rf.me)
+
 	done := make(chan struct{})
 	go func() {
 		wg.Wait()
@@ -138,20 +176,22 @@ func (rf *Raft) VoteOperation(rpcTimeOut int) bool {
 	}
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
-	defer func() {
-		rf.voteFor = -1
-		rf.voteStatus = 0
-	}()
-	if rf.voteStatus == 0 {
+	//defer func() {
+	//	rf.voteFor = -1
+	//	rf.isCandidate = true
+	//}()
+	if !rf.isCandidate {
 		return false
 	}
+	log.Printf("Server Candidate %v Vote is %v", rf.me, voteNum)
 	if int(atomic.LoadInt32(&voteNum)) > len(rf.peers)/2 {
-		for i := 0; i < len(rf.peers); i++ {
-			rf.nextIndex[i] = rf.lastApplied + 1
-			rf.matchIndex[i] = 0
-		}
-		rf.isLeader = true
-		rf.currentTerm += 1
+		rf.ChangeToLeader()
+		//for i := 0; i < len(rf.peers); i++ {
+		//	rf.nextIndex[i] = rf.lastApplied + 1
+		//	rf.matchIndex[i] = 0
+		//}
+		//rf.isLeader = true
+		//rf.currentTerm += 1
 		log.Printf("sever %v become leader, term is %v", rf.me, rf.currentTerm)
 		return true
 		//time.Sleep(5 * time.Millisecond)
