@@ -47,11 +47,11 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 			args.CandidateId, rf.me, rf.voteFor, rf.currentTerm, args.Term)
 		return
 	}
+	rf.heartBeat <- struct{}{}
 	rf.ChangeToFollow(-1, args.Term)
 	logTerm := rf.GetLogItem(rf.lastApplied).Term
 	if (args.LastLogTerm > logTerm) ||
 		(args.LastLogTerm == logTerm && args.LastLogIndex >= rf.lastApplied) {
-		rf.heartBeat <- struct{}{}
 		rf.ChangeToFollow(args.CandidateId, args.Term)
 		reply.VoteGranted = true
 	}

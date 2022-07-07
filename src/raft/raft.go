@@ -18,6 +18,7 @@ package raft
 //
 
 import (
+	"io/ioutil"
 	"log"
 	"math/rand"
 	//	"bytes"
@@ -311,7 +312,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	//rf.Snapshot(-1, rf.GetSnapshotByte())
 	log.SetFlags(log.Lmicroseconds)
 	//log.SetFlags(0)
-	//log.SetOutput(ioutil.Discard)
+	log.SetOutput(ioutil.Discard)
 	// initialize from state persisted before a crash
 	rf.readPersist(persister.ReadRaftState())
 	//log.Printf("Server %v", rf.me)
