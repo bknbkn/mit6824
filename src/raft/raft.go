@@ -68,6 +68,8 @@ type Raft struct {
 
 	// For 2D
 	SnapshotByte []byte
+	NeedSnapShot bool
+	SnapShotCond sync.Cond
 }
 
 // return currentTerm and whether this server
@@ -93,21 +95,41 @@ func (rf *Raft) CondInstallSnapshot(lastIncludedTerm int, lastIncludedIndex int,
 
 	return true
 }
-
+func (rf *Raft) CommitApplyCh(lastCommitIndex, commitIndex int) {
+	for i := lastCommitIndex + 1; i <= commitIndex; i++ {
+		//if i%SnapShotInterval == 0 {
+		//	time.Sleep(5 * time.Millisecond)
+		//}
+		//rf.SnapShotCond.L.Lock()
+		//for rf.NeedSnapShot {
+		//	rf.SnapShotCond.Wait()
+		//}
+		//rf.SnapShotCond.L.Unlock()
+		command := rf.GetLogItem(i).Command
+		log.Printf("ALL command: %v commit %v li %v\n", command, i, commitIndex)
+		*rf.applyChan <- ApplyMsg{
+			SnapshotValid: false,
+			CommandValid:  true,
+			Command:       command,
+			CommandIndex:  i,
+		}
+		log.Printf("ALLFinish command: %v commit %v li %v\n", command, i, commitIndex)
+	}
+}
 func (rf *Raft) Commit() bool {
 	if rf.killed() == false {
 		log.Printf("start commit judge %v", rf.me)
 		rf.mu.Lock()
 		//lastTerm := rf.logs[rf.lastApplied].Term
 		commitIndex := rf.lastApplied
-		log.Printf("Get mu start commit judge %v, lastAppid %v, lastInclud %v",
-			rf.me, rf.lastApplied, rf.GetLogItem(commitIndex))
+		log.Printf("Get mu start commit %v %v judge %v, lastAppid %v, lastInclud %v",
+			rf.commitIndex, commitIndex, rf.me, rf.lastApplied, rf.GetLogItem(commitIndex))
 		//term := rf.currentTerm
 		rf.matchIndex[rf.me] = rf.lastApplied
 	loop:
 		for ; ; commitIndex-- {
 			if rf.GetLogItem(commitIndex).Term != rf.currentTerm || commitIndex <= rf.commitIndex {
-				log.Printf("no commit rf.logs[commitIndex].Term %v, rf.currentTerm %v, commitIndex %v, rf.commitIndex %v",
+				log.Printf("no commit rf.logs[commitIndex].Term %v, rf.currentTerm %v, commitIndex %v, rf.commitIndex %v\n",
 					rf.GetLogItem(commitIndex).Term, rf.currentTerm, commitIndex, rf.commitIndex)
 				rf.mu.Unlock()
 				return false
@@ -122,19 +144,26 @@ func (rf *Raft) Commit() bool {
 				}
 			}
 		}
-		log.Printf("mority of server have same logs length %v, become commit", len(rf.logs))
+		log.Printf("mority of server have same logs length %v, become commit %v \n", len(rf.logs), commitIndex)
+		//limit := SnapShotInterval*((rf.commitIndex+1)/SnapShotInterval+1) - 1
+		//if limit < commitIndex {
+		//	commitIndex = limit
+		//}
 		lastCommitIndex := rf.commitIndex
 		rf.commitIndex = commitIndex
 		rf.mu.Unlock()
-		for i := lastCommitIndex + 1; i <= commitIndex; i++ {
-			command := rf.GetLogItem(i).Command
-			*rf.applyChan <- ApplyMsg{
-				SnapshotValid: false,
-				CommandValid:  true,
-				Command:       command,
-				CommandIndex:  i,
-			}
-		}
+		rf.CommitApplyCh(lastCommitIndex, commitIndex)
+		//for i := lastCommitIndex + 1; i <= commitIndex; i++ {
+		//	command := rf.GetLogItem(i).Command
+		//	log.Printf("ALL command: %v commit %v li %v\n", command, i, commitIndex)
+		//	*rf.applyChan <- ApplyMsg{
+		//		SnapshotValid: false,
+		//		CommandValid:  true,
+		//		Command:       command,
+		//		CommandIndex:  i,
+		//	}
+		//	log.Printf("ALLFinish command: %v commit %v li %v\n", command, i, commitIndex)
+		//}
 		return true
 		//log.Printf("Server %v commit id is %v", rf.me, rf.commitIndex)
 	}
@@ -165,7 +194,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	rf.mu.Lock()
 	term, isLeader = rf.currentTerm, rf.isLeader
 	if isLeader {
-		log.Printf("rf %v start entry is %v", rf.me, command)
+		log.Printf("rf %v start entry is %v\n", rf.me, command)
 		//rf.logs = append(rf.logs, LogEntry{Term: rf.currentTerm, Command: command})
 		rf.SetLogItems(rf.lastApplied+1, []LogEntry{{Term: rf.currentTerm, Command: command}})
 		index = rf.lastApplied
@@ -275,6 +304,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.commitIndex = -1
 	rf.lastIncludedIndex = -1
 	rf.lastIncludedTerm = -1
+	rf.SnapShotCond = sync.Cond{L: &sync.Mutex{}}
 	//rf.Snapshot(-1, rf.GetSnapshotByte())
 	log.SetFlags(log.Lmicroseconds)
 	//log.SetFlags(0)
@@ -287,7 +317,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	//}
 	// start ticker goroutine to start elections
 	//log.Logger
-	//go rf.Snapshot(-1, rf.GetSnapshotByte())
+	//rf.Snapshot(rf.lastIncludedIndex, rf.GetSnapshotByte())
 	go rf.ticker()
 
 	return rf

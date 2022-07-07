@@ -1125,8 +1125,9 @@ func snapcommon(t *testing.T, name string, disconnect bool, reliable bool, crash
 
 	cfg.one(rand.Int(), servers, true)
 	leader1 := cfg.checkOneLeader()
-
+	//fmt.Printf("leader is %v \n", leader1)
 	for i := 0; i < iters; i++ {
+		//fmt.Printf("LINNNNNNNN!!!!!!!!!!!\n")
 		victim := (leader1 + 1) % servers
 		sender := leader1
 		if i%3 == 1 {
@@ -1155,6 +1156,7 @@ func snapcommon(t *testing.T, name string, disconnect bool, reliable bool, crash
 			// an InstallSnapshot RPC isn't required for
 			// TestSnapshotBasic2D().
 			cfg.one(rand.Int(), servers, true)
+			//fmt.Printf("FINNNNNNNN!!!!!!!!!!!\n")
 		} else {
 			cfg.one(rand.Int(), servers-1, true)
 		}

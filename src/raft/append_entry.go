@@ -49,24 +49,29 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		args.LeaderId, rf.me, args.LeaderCommit, len(args.Entries))
 	if rf.MatchLogs(args.PrevLogIndex, args.PrevLogTerm) {
 		rf.SetLogItems(args.PrevLogIndex+1, args.Entries)
-		log.Printf("rf.me %v, logs %v", rf.me, len(rf.logs))
-		if args.LeaderCommit > rf.commitIndex {
+		log.Printf("rf.me %v, logs %v, commit :%v\n", rf.me, rf.logs, rf.commitIndex)
+		//limit := SnapShotInterval*((rf.commitIndex+1)/SnapShotInterval+1) - 1
+		commitIndex := args.LeaderCommit
+		//if limit < commitIndex {
+		//	commitIndex = limit
+		//}
+		if commitIndex > rf.commitIndex {
 			lastCommitIndex := rf.commitIndex
-			rf.commitIndex = args.LeaderCommit
-			commitIndex := rf.commitIndex
-			//log.Printf(" rf commit success %v %v", rf.me, rf.commitIndex)
-			for i := lastCommitIndex + 1; i <= commitIndex; i++ {
-				command := rf.GetLogItem(i).Command
-				//log.Printf("server %v command : %v", rf.me, command)
-				rf.mu.Unlock()
-				*rf.applyChan <- ApplyMsg{
-					CommandValid: true,
-					Command:      command,
-					CommandIndex: i,
-				}
-				rf.mu.Lock()
-			}
-			//log.Printf("Server %v commit id %v", rf.me, rf.commitIndex)
+			rf.commitIndex = commitIndex
+			rf.mu.Unlock()
+			log.Printf(" rf commit success %v %v\n", rf.me, rf.commitIndex)
+			rf.CommitApplyCh(lastCommitIndex, commitIndex)
+			//for i := lastCommitIndex + 1; i <= commitIndex; i++ {
+			//	command := rf.GetLogItem(i).Command
+			//	//log.Printf("server %v command : %v", rf.me, command)
+			//	*rf.applyChan <- ApplyMsg{
+			//		CommandValid: true,
+			//		Command:      command,
+			//		CommandIndex: i,
+			//	}
+			//}
+			rf.mu.Lock()
+			log.Printf("Server %v commit id %v", rf.me, rf.commitIndex)
 		}
 		reply.Success = true
 	} else {
@@ -121,11 +126,13 @@ func (rf *Raft) LeaderOperation(rpcTimeOut int) {
 					prevLogTerm = rf.GetLogItem(prevLogIndex).Term
 				}
 				//entries := rf.logs[rf.nextIndex[i]-lastIncludedIndex : lastApplied-lastIncludedIndex+1]
-				log.Printf("rf.nextIndex %v is : %v", i, rf.nextIndex[i])
+				log.Printf("rf.nextIndex %v is : %v\n", i, rf.nextIndex[i])
 				var data []byte
 				var entries []LogEntry
 				if prevLogIndex <= lastIncludedIndex {
 					data = rf.GetSnapshotByte()
+					log.Println("data", data)
+					entries = rf.GetLogItems(lastIncludedIndex+1, lastApplied+1)
 				} else {
 					entries = rf.GetLogItems(rf.nextIndex[i], lastApplied+1)
 				}
@@ -142,19 +149,21 @@ func (rf *Raft) LeaderOperation(rpcTimeOut int) {
 					}
 
 					reply := SnapshotReply{}
-					if ok := rf.sendInstallSnapshot(rf.me, &snapshotArgs, &reply); ok {
+					if ok := rf.sendInstallSnapshot(i, &snapshotArgs, &reply); ok {
 						rf.mu.Lock()
-						if rf.currentTerm < reply.Term {
-							rf.currentTerm = reply.Term
-						} else {
+						if rf.currentTerm >= reply.Term {
+							log.Printf("Server %d send Snapshot to %d success", rf.me, i)
 							rf.nextIndex[i] = lastIncludedIndex + 1
 							rf.matchIndex[i] = lastIncludedIndex
+							prevLogTerm = lastIncludedTerm
+							prevLogIndex = lastIncludedIndex
 						}
 						rf.mu.Unlock()
 					} else {
 						log.Printf("Server %d send Snapshot to %d failed", rf.me, i)
+						return
 					}
-					return
+					//return
 				}
 
 				appendEntriesArgs := AppendEntriesArgs{
@@ -170,8 +179,8 @@ func (rf *Raft) LeaderOperation(rpcTimeOut int) {
 				//	rf.me, rf, i, len(rf.logs))
 				//time.Sleep(20 * time.Millisecond)
 				if ok := rf.sendAppendEntries(i, &appendEntriesArgs, &appendEntriesReply); !ok {
-					//log.Printf("Server %v (address is %p) send entries to server %v error",
-					//	rf.me, rf, i)
+					log.Printf("Server %v (address is %p) send entries to server %v error",
+						rf.me, rf, i)
 				} else {
 					//rf.mu.Lock()
 					//defer rf.mu.Unlock()
@@ -181,7 +190,11 @@ func (rf *Raft) LeaderOperation(rpcTimeOut int) {
 					rf.mu.Lock()
 					if !appendEntriesReply.Success {
 						//log.Printf("Follower sever %v reject entries", i)
-						rf.nextIndex[i] = (rf.nextIndex[i] + rf.matchIndex[i]) / 2
+						lowerBound := rf.matchIndex[i]
+						if rf.lastIncludedIndex+1 > lowerBound {
+							lowerBound = rf.lastIncludedIndex + 1
+						}
+						rf.nextIndex[i] = (rf.nextIndex[i] + lowerBound) / 2
 						//rf.nextIndex[i]--
 						if rf.nextIndex[i] < 1 {
 							rf.nextIndex[i] = 1
@@ -190,8 +203,8 @@ func (rf *Raft) LeaderOperation(rpcTimeOut int) {
 					} else {
 						rf.nextIndex[i] = lastApplied + 1
 						rf.matchIndex[i] = lastApplied
-						log.Printf("Follower sever %v accept entries, rf.matchIndex[i] %v",
-							i, rf.matchIndex[i])
+						log.Printf("Follower sever %v accept entries, rf.matchIndex[i] %v value : %v commit :%v\n",
+							i, rf.matchIndex[i], rf.logs, rf.commitIndex)
 					}
 					rf.mu.Unlock()
 				}

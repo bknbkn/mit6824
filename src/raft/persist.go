@@ -20,7 +20,7 @@ func (rf *Raft) persist() {
 	e.Encode(rf.currentTerm)
 	e.Encode(rf.voteFor)
 	e.Encode(rf.logs)
-	//snapShotByte := rf.GetSnapshotByte()
+	snapShotByte := rf.GetSnapshotByte()
 	rf.mu.Unlock()
 
 	//log.Printf("Persist SERVER : %v Logs : %v, commit: %v", rf.me, logs, rf.commitIndex)
@@ -30,8 +30,8 @@ func (rf *Raft) persist() {
 	//log.Printf("logs length %v", len(rf.logs))
 
 	data := w.Bytes()
-	rf.persister.SaveRaftState(data)
-	//rf.persister.SaveStateAndSnapshot(data, snapShotByte)
+	//rf.persister.SaveRaftState(data)
+	rf.persister.SaveStateAndSnapshot(data, snapShotByte)
 	//log.Printf("save %v", data)
 }
 
@@ -43,7 +43,6 @@ func (rf *Raft) readPersist(data []byte) {
 		return
 	}
 	// Your code here (2C).
-	//rf.GetSnapshotEntry(rf.persister.ReadSnapshot()) // need reset state machine
 	//log.Printf("Snap Entry : %v", rf.SnapShotEntry)
 	r := bytes.NewBuffer(data)
 	d := labgob.NewDecoder(r)
@@ -57,5 +56,7 @@ func (rf *Raft) readPersist(data []byte) {
 	} else {
 		log.Fatal("Parse Error")
 	}
+	rf.GetSnapshotEntry(rf.persister.ReadSnapshot(), rf.currentTerm) // need reset state machine
 	rf.lastApplied = rf.lastIncludedIndex + len(rf.logs)
+	rf.commitIndex = rf.lastIncludedIndex
 }
