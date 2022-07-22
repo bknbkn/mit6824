@@ -44,6 +44,7 @@ import (
 //
 // A Go object implementing a single Raft peer.
 //
+const voteRpcTime = 50
 
 type Raft struct {
 	mu        sync.Mutex          // Lock to protect shared access to this peer's state
@@ -241,7 +242,7 @@ func (rf *Raft) ticker() {
 		leaderDur := 160
 		//commitDur := 100
 		rpcTimeOut := 100
-		voteRpcTime := 55
+		//voteRpcTime := 55
 		timeFollower := time.After(time.Duration(followerDur) * time.Millisecond)
 		time.Sleep(time.Duration(voteRpcTime) * time.Millisecond)
 		_, isLeader := rf.GetState()

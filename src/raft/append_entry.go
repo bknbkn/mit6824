@@ -190,15 +190,15 @@ func (rf *Raft) LeaderOperation(rpcTimeOut int) {
 					rf.mu.Lock()
 					if !appendEntriesReply.Success {
 						//log.Printf("Follower sever %v reject entries", i)
-						lowerBound := rf.matchIndex[i]
+						lowerBound := rf.matchIndex[i] + 1
 						if rf.lastIncludedIndex+1 > lowerBound {
 							lowerBound = rf.lastIncludedIndex + 1
 						}
 						rf.nextIndex[i] = (rf.nextIndex[i] + lowerBound) / 2
 						//rf.nextIndex[i]--
-						if rf.nextIndex[i] < 1 {
-							rf.nextIndex[i] = 1
-						}
+						//if rf.nextIndex[i] < 1 {
+						//	rf.nextIndex[i] = 1
+						//}
 						//log.Printf("leader %v rejust nextIndex %v %v %v", rf.me, i, rf.nextIndex[i], rf.matchIndex[i])
 					} else {
 						rf.nextIndex[i] = lastApplied + 1

@@ -27,6 +27,12 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	if (args.LastLogTerm > logTerm) ||
 		(args.LastLogTerm == logTerm && args.LastLogIndex >= rf.lastApplied) {
 		rf.voteFor = args.CandidateId
+		go func() {
+			time.Sleep((voteRpcTime + 5) * time.Millisecond)
+			rf.mu.Lock()
+			rf.voteFor = -1
+			rf.mu.Unlock()
+		}()
 		rf.heartBeat <- struct{}{}
 		reply.VoteGranted = true
 	}
