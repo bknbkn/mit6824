@@ -11,3 +11,4 @@ mrtmp.*
 /main/mrsequential
 /main/mrworker
 /main/pprof/
+/mr/mr_test.go
