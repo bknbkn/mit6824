@@ -148,7 +148,7 @@ func (rf *Raft) VoteOperation(rpcTimeOut int) bool {
 	if int(atomic.LoadInt32(&voteNum)) > len(rf.peers)/2 {
 		for i := 0; i < len(rf.peers); i++ {
 			rf.nextIndex[i] = rf.lastApplied + 1
-			rf.matchIndex[i] = rf.commitIndex
+			rf.matchIndex[i] = 0
 		}
 		rf.isLeader = true
 		rf.currentTerm += 1
